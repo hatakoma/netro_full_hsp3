@@ -1,0 +1,8 @@
+# Preserve CP932 source/document bytes and CRLF as stored.
+*.hsp -text
+README.txt -text
+LICENSE_NOTES.txt -text
+THIRD_PARTY_NOTICES.txt -text
+*.frag text eol=lf
+*.vert text eol=lf
+*.png binary

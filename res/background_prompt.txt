@@ -1,0 +1,4 @@
+Generator: built-in image_gen tool
+Asset: cyberpunk_city.png
+
+Use case: stylized-concept. Asset type: background image for a neo-retro pixel-art shader demo. Create a wide 16:9 cyberpunk city at night, pixel art with large readable shapes suitable for display at 320x180. Rain-dark elevated roadway in foreground, layered futuristic buildings and luminous sign panels in the distance. Deep navy and violet shadows with restrained mint and orange neon accents, a few red and green lights. Keep the central foreground dark and open so moving light trails remain clearly visible. Atmospheric, cinematic, crisp pixel clusters, no characters, no logos, no readable text, no watermark. Full bleed opaque image.

@@ -1,0 +1,161 @@
+#include "hgimg4.as"
+
+; ネトロシェーダー：水緑色／オレンジの色選択グロー
+; このファイルは Shift-JIS (CP932) で保存する。
+; Space: 背景 OFF→マス目→一枚絵 / E: 効果の切替 / Esc: 終了
+chdir dir_cur
+screen 0,960,540
+title "ネトロシェーダー - Space: OFF/Grid/City / E: Effect / Esc: exit"
+
+; 内部解像度。実際のゲームのドット解像度に合わせる。
+sw=320 : sh=180
+mint_gain=0.85
+orange_gain=0.85
+spread_gain=0.28       ; 隣接1ドットの膨張強度
+halo_gain=0.75         ; 周囲2ドットまでのにじみ強度
+enabled=1
+background_mode=0
+e_prev=0
+trail_half_ms=180.0    ; 残像の半減時間。大きいほど長い尾になる。
+trail_gain=0.70        ; 残像の最終加算強度
+red_gain=0.90
+green_gain=0.80
+
+; 背景画像は起動時に一度だけ読み込む。
+celload "res/cyberpunk_city.png",5
+gsel 5
+bg_width=ginfo_sx : bg_height=ginfo_sy
+gpusershader "res/shaders/neoretro.vert","res/shaders/neoretro.frag",""
+buffer 1,sw,sh,screen_offscreen+screen_usergcopy
+gpgetmat glow_mat,1,GPGETMAT_OPT_SCRMAT
+gpmatprm1 glow_mat,"u_stepX",1.0/sw
+gpmatprm1 glow_mat,"u_stepY",1.0/sh
+gpmatprm1 glow_mat,"u_mintGain",mint_gain
+gpmatprm1 glow_mat,"u_orangeGain",orange_gain
+gpmatprm1 glow_mat,"u_spread",spread_gain
+gpmatprm1 glow_mat,"u_halo",halo_gain
+buffer 2,sw,sh,screen_offscreen
+; 残像は別の2枚を交互に使用。同じ画像への読み書きを避ける。
+gpusershader "res/shaders/neoretro.vert","res/shaders/trail_decay.frag",""
+buffer 3,sw,sh,screen_offscreen+screen_usergcopy
+gpgetmat trail_mat3,3,GPGETMAT_OPT_SCRMAT
+redraw 0 : color 0,0,0 : boxf : redraw 1
+buffer 4,sw,sh,screen_offscreen+screen_usergcopy
+gpgetmat trail_mat4,4,GPGETMAT_OPT_SCRMAT
+redraw 0 : color 0,0,0 : boxf : redraw 1
+trail_prev=3 : trail_next=4
+gpmatprm1 glow_mat,"u_redGain",red_gain
+gpmatprm1 glow_mat,"u_greenGain",green_gain
+gpmatprm1 glow_mat,"u_trailOnly",0.0
+getreq last_ms,SYSREQ_TIMER
+frame=0
+
+*main
+stick key
+if key&128 : end
+; stickの標準動作は押した瞬間のみ。長押しで反転を繰り返さない。
+if key&16 {
+    background_mode=(background_mode+1)\3
+    ; 背景の赤・緑が次のモードに残らないよう履歴を消去。
+    gsel 3 : redraw 0 : color 0,0,0 : boxf : redraw 1
+    gsel 4 : redraw 0 : color 0,0,0 : boxf : redraw 1
+}
+getkey e_now,69
+if (e_now=1)&(e_prev=0) : enabled=1-enabled
+e_prev=e_now
+gpmatprm1 glow_mat,"u_enabled",double(enabled)
+
+; 1: ここにゲーム画面全体を描画する。
+gsel 1
+redraw 0
+color 0,0,0 : boxf
+if background_mode=1 {
+color 10,12,24 : boxf
+color 25,28,44
+repeat 20
+    xx=cnt*16
+    line xx,0,xx,179
+loop
+repeat 12
+    yy=cnt*16
+    line 0,yy,319,yy
+loop
+}
+if background_mode=2 {
+    gfilter 0 : gmode 0 : pos 0,0
+    gzoom sw,sh,5,0,0,bg_width,bg_height
+}
+; 非発光色も並べ、色選択を確認する。
+color 64,255,192 : boxf 35,38,76,66
+color 255,128,40 : boxf 105,38,146,66
+color 160,80,220 : boxf 175,38,216,66
+color 190,190,190 : boxf 245,38,286,66
+repeat 28
+    xx=24+cnt*10
+    yy=112+int(sin(double(cnt)*0.5+double(frame)*0.04)*18.0)
+    color 64,255,192
+    if cnt\2 : color 255,128,40
+    boxf xx,yy,xx+2,yy+2
+loop
+; 赤と緑の移動するランプ。実際に通過した位置に尾を残す。
+rx=160+int(sin(double(frame)*0.023)*110.0)
+ry=85+int(cos(double(frame)*0.031)*38.0)
+color 255,22,12 : boxf rx,ry,rx+4,ry+2
+gx=160+int(sin(double(frame)*0.019+2.0)*105.0)
+gy=90+int(cos(double(frame)*0.027+1.0)*40.0)
+color 20,255,35 : boxf gx,gy,gx+4,gy+2
+; 左右非対称の目印（上下反転の確認にも使える）。
+color 230,230,240 : boxf 4,4,9,9
+redraw 1
+
+; 時間基準の減衰。長い停止後は尾も消える。
+getreq now_ms,SYSREQ_TIMER
+delta_ms=now_ms-last_ms : last_ms=now_ms
+if delta_ms<0 : delta_ms=16
+decay=expf(-0.69314718*double(delta_ms)/trail_half_ms)
+floor_loss=double(delta_ms)/16.6667/255.0
+prev_mat=trail_mat3
+if trail_prev=4 : prev_mat=trail_mat4
+gpmatprm1 prev_mat,"u_decay",decay
+gpmatprm1 prev_mat,"u_floor",floor_loss
+gsel trail_next
+redraw 0
+gfilter 0 : gmode 0 : pos 0,0
+color 0,0,0 : boxf
+if enabled {
+    celput trail_prev
+    gpmatprm1 glow_mat,"u_trailOnly",1.0
+    gmode 5,,,256 : pos 0,0
+    celput 1
+}
+redraw 1
+gpmatprm1 glow_mat,"u_trailOnly",0.0
+swap_id=trail_prev : trail_prev=trail_next : trail_next=swap_id
+
+; 2: 低解像度で色選択・膨張・加算を処理する。
+gsel 2
+redraw 0
+gfilter 0
+gmode 0 : pos 0,0
+celput 1
+; 残像を元のグロー処理済み画面へ加算。
+if enabled {
+    display_mat=trail_mat3
+    if trail_prev=4 : display_mat=trail_mat4
+    gpmatprm1 display_mat,"u_decay",1.0
+    gpmatprm1 display_mat,"u_floor",0.0
+    gmode 5,,,int(trail_gain*256.0) : pos 0,0
+    celput trail_prev
+}
+redraw 1
+
+; 3: 処理済み画像をニアレストで画面全体へ拡大。
+gsel 0
+redraw 0
+gfilter 0
+gmode 0 : pos 0,0
+gzoom 960,540,2,0,0,sw,sh
+redraw 1
+frame++
+await 16
+goto *main

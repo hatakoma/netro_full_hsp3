@@ -1,0 +1,9 @@
+# HSP compiler and runtime outputs
+/hsptmp
+/obj
+*.ax
+*.exe
+*.dll
+*.hrt
+*.dpm
+*.log
