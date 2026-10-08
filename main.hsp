@@ -2,10 +2,10 @@
 
 ; ネトロシェーダー：水緑色／オレンジの色選択グロー
 ; このファイルは Shift-JIS (CP932) で保存する。
-; Space: 背景 OFF→マス目→一枚絵 / E: 効果の切替 / Esc: 終了
-chdir dir_cur
-screen 0,960,540
-title "ネトロシェーダー - Space: OFF/Grid/City / E: Effect / Esc: exit"
+; Space: 背景 OFF→マス目→一枚絵 / E: 効果の切替 / P: 明滅 / Esc: 終了
+view_width=960 : view_height=540
+screen 0,view_width,view_height
+title "ネトロシェーダー - Space: OFF/Grid/City / E: Effect / P: Pulse / Esc: exit"
 
 ; 内部解像度。実際のゲームのドット解像度に合わせる。
 sw=320 : sh=180
@@ -16,6 +16,12 @@ halo_gain=0.75         ; 周囲2ドットまでのにじみ強度
 enabled=1
 background_mode=0
 e_prev=0
+p_prev=0
+pulse_mode=0          ; Pキーで明滅ON/OFF（初期状態OFF）
+pulse_period_ms=2400.0 ; 明滅の周期（ミリ秒、0より大きくする）
+pulse_min=0.15        ; 基準発光強度に対する最小倍率
+pulse_max=1.35        ; 基準発光強度に対する最大倍率
+pulse_phase=0.0
 trail_half_ms=180.0    ; 残像の半減時間。大きいほど長い尾になる。
 trail_gain=0.70        ; 残像の最終加算強度
 red_gain=0.90
@@ -30,8 +36,6 @@ buffer 1,sw,sh,screen_offscreen+screen_usergcopy
 gpgetmat glow_mat,1,GPGETMAT_OPT_SCRMAT
 gpmatprm1 glow_mat,"u_stepX",1.0/sw
 gpmatprm1 glow_mat,"u_stepY",1.0/sh
-gpmatprm1 glow_mat,"u_mintGain",mint_gain
-gpmatprm1 glow_mat,"u_orangeGain",orange_gain
 gpmatprm1 glow_mat,"u_spread",spread_gain
 gpmatprm1 glow_mat,"u_halo",halo_gain
 buffer 2,sw,sh,screen_offscreen
@@ -39,11 +43,10 @@ buffer 2,sw,sh,screen_offscreen
 gpusershader "res/shaders/neoretro.vert","res/shaders/trail_decay.frag",""
 buffer 3,sw,sh,screen_offscreen+screen_usergcopy
 gpgetmat trail_mat3,3,GPGETMAT_OPT_SCRMAT
-redraw 0 : color 0,0,0 : boxf : redraw 1
 buffer 4,sw,sh,screen_offscreen+screen_usergcopy
 gpgetmat trail_mat4,4,GPGETMAT_OPT_SCRMAT
-redraw 0 : color 0,0,0 : boxf : redraw 1
 trail_prev=3 : trail_next=4
+gosub *clear_trails
 gpmatprm1 glow_mat,"u_redGain",red_gain
 gpmatprm1 glow_mat,"u_greenGain",green_gain
 gpmatprm1 glow_mat,"u_trailOnly",0.0
@@ -51,20 +54,58 @@ getreq last_ms,SYSREQ_TIMER
 frame=0
 
 *main
+    gosub *read_input
+    gosub *update_effects
+    gosub *draw_scene
+    gosub *update_trails
+    gosub *compose_effects
+    gosub *present_frame
+    frame++
+    await 16
+    goto *main
+
+*read_input
 stick key
 if key&128 : end
 ; stickの標準動作は押した瞬間のみ。長押しで反転を繰り返さない。
 if key&16 {
     background_mode=(background_mode+1)\3
     ; 背景の赤・緑が次のモードに残らないよう履歴を消去。
-    gsel 3 : redraw 0 : color 0,0,0 : boxf : redraw 1
-    gsel 4 : redraw 0 : color 0,0,0 : boxf : redraw 1
+    gosub *clear_trails
 }
 getkey e_now,69
-if (e_now=1)&(e_prev=0) : enabled=1-enabled
+if (e_now=1)&(e_prev=0) {
+    enabled=1-enabled
+    gosub *clear_trails
+}
 e_prev=e_now
+getkey p_now,80
+if (p_now=1)&(p_prev=0) : pulse_mode=1-pulse_mode
+p_prev=p_now
 gpmatprm1 glow_mat,"u_enabled",double(enabled)
+return
 
+*update_effects
+; 時間基準の減衰。長い停止後は尾も消える。
+getreq now_ms,SYSREQ_TIMER
+delta_ms=now_ms-last_ms : last_ms=now_ms
+if delta_ms<0 : delta_ms=16
+; 発光成分だけを実時間で明滅。元画像と赤・緑の残像倍率は維持。
+mint_current=mint_gain : orange_current=orange_gain
+if pulse_mode & enabled {
+    if pulse_period_ms<1.0 : pulse_period_ms=1.0
+    pulse_phase+=6.28318530718*double(delta_ms)/pulse_period_ms
+    pulse_phase-=double(int(pulse_phase/6.28318530718))*6.28318530718
+    mint_wave=0.5+0.5*sin(pulse_phase)
+    orange_wave=0.5+0.5*sin(pulse_phase+1.57079632679)
+    mint_current=mint_gain*(pulse_min+(pulse_max-pulse_min)*mint_wave)
+    orange_current=orange_gain*(pulse_min+(pulse_max-pulse_min)*orange_wave)
+}
+gpmatprm1 glow_mat,"u_mintGain",mint_current
+gpmatprm1 glow_mat,"u_orangeGain",orange_current
+return
+
+*draw_scene
 ; 1: ここにゲーム画面全体を描画する。
 gsel 1
 redraw 0
@@ -72,13 +113,13 @@ color 0,0,0 : boxf
 if background_mode=1 {
 color 10,12,24 : boxf
 color 25,28,44
-repeat 20
+repeat (sw+15)/16
     xx=cnt*16
-    line xx,0,xx,179
+    line xx,0,xx,sh-1
 loop
-repeat 12
+repeat (sh+15)/16
     yy=cnt*16
-    line 0,yy,319,yy
+    line 0,yy,sw-1,yy
 loop
 }
 if background_mode=2 {
@@ -107,11 +148,12 @@ color 20,255,35 : boxf gx,gy,gx+4,gy+2
 ; 左右非対称の目印（上下反転の確認にも使える）。
 color 230,230,240 : boxf 4,4,9,9
 redraw 1
+return
 
-; 時間基準の減衰。長い停止後は尾も消える。
-getreq now_ms,SYSREQ_TIMER
-delta_ms=now_ms-last_ms : last_ms=now_ms
-if delta_ms<0 : delta_ms=16
+*update_trails
+; 効果OFF時は履歴処理を省略。切替時に両方の履歴を消去済み。
+if enabled=0 : return
+if trail_half_ms<1.0 : trail_half_ms=1.0
 decay=expf(-0.69314718*double(delta_ms)/trail_half_ms)
 floor_loss=double(delta_ms)/16.6667/255.0
 prev_mat=trail_mat3
@@ -122,16 +164,16 @@ gsel trail_next
 redraw 0
 gfilter 0 : gmode 0 : pos 0,0
 color 0,0,0 : boxf
-if enabled {
-    celput trail_prev
-    gpmatprm1 glow_mat,"u_trailOnly",1.0
-    gmode 5,,,256 : pos 0,0
-    celput 1
-}
+celput trail_prev
+gpmatprm1 glow_mat,"u_trailOnly",1.0
+gmode 5,,,256 : pos 0,0
+celput 1
 redraw 1
 gpmatprm1 glow_mat,"u_trailOnly",0.0
 swap_id=trail_prev : trail_prev=trail_next : trail_next=swap_id
+return
 
+*compose_effects
 ; 2: 低解像度で色選択・膨張・加算を処理する。
 gsel 2
 redraw 0
@@ -148,14 +190,20 @@ if enabled {
     celput trail_prev
 }
 redraw 1
+return
 
+*present_frame
 ; 3: 処理済み画像をニアレストで画面全体へ拡大。
 gsel 0
 redraw 0
 gfilter 0
 gmode 0 : pos 0,0
-gzoom 960,540,2,0,0,sw,sh
+gzoom view_width,view_height,2,0,0,sw,sh
 redraw 1
-frame++
-await 16
-goto *main
+return
+
+*clear_trails
+; 初期化・背景切替・効果切替で共用する。
+gsel 3 : redraw 0 : color 0,0,0 : boxf : redraw 1
+gsel 4 : redraw 0 : color 0,0,0 : boxf : redraw 1
+return
