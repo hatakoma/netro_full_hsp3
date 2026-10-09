@@ -3,12 +3,24 @@
 ; ネトロシェーダー：水緑色／オレンジの色選択グロー
 ; このファイルは Shift-JIS (CP932) で保存する。
 ; Space: 背景 OFF→マス目→一枚絵 / E: 効果の切替 / P: 明滅 / Esc: 終了
-view_width=960 : view_height=540
+; Windowsのデスクトップ解像度から80%の表示領域を確保。
+; 取得非対応環境ではランタイムの初期画面サイズを使う。
+view_width=ginfo_dispx : view_height=ginfo_dispy
+if (view_width>0)&(view_height>0) {
+    view_width=view_width*4/5 : view_height=view_height*4/5
+} else {
+    view_width=ginfo_sx : view_height=ginfo_sy
+}
+if view_width<1 : view_width=640
+if view_height<1 : view_height=360
 screen 0,view_width,view_height
+view_width=ginfo_sx : view_height=ginfo_sy
 title "ネトロシェーダー - Space: OFF/Grid/City / E: Effect / P: Pulse / Esc: exit"
 
 ; 内部解像度。実際のゲームのドット解像度に合わせる。
 sw=320 : sh=180
+shown_bloom_level=0
+bloom_level=5         ; ブルーム強度1～10。上下キーでも変更可能。
 mint_gain=0.85
 orange_gain=0.85
 spread_gain=0.28       ; 隣接1ドットの膨張強度
@@ -34,8 +46,13 @@ bg_width=ginfo_sx : bg_height=ginfo_sy
 gpusershader "res/shaders/neoretro.vert","res/shaders/neoretro.frag",""
 buffer 1,sw,sh,screen_offscreen+screen_usergcopy
 gpgetmat glow_mat,1,GPGETMAT_OPT_SCRMAT
-gpmatprm1 glow_mat,"u_stepX",1.0/sw
-gpmatprm1 glow_mat,"u_stepY",1.0/sh
+; 短辺540pxで1サンプル間隔3px、外周半径6pxを基準とする。
+; 縦横で同じ表示ピクセル幅になるようUVへ変換。
+view_short=view_width
+if view_height<view_short : view_short=view_height
+bloom_step_px=double(view_short)/180.0
+gpmatprm1 glow_mat,"u_stepX",bloom_step_px/view_width
+gpmatprm1 glow_mat,"u_stepY",bloom_step_px/view_height
 gpmatprm1 glow_mat,"u_spread",spread_gain
 gpmatprm1 glow_mat,"u_halo",halo_gain
 buffer 2,sw,sh,screen_offscreen
@@ -67,6 +84,8 @@ frame=0
 *read_input
 stick key
 if key&128 : end
+if key&2 : bloom_level++
+if key&8 : bloom_level--
 ; stickの標準動作は押した瞬間のみ。長押しで反転を繰り返さない。
 if key&16 {
     background_mode=(background_mode+1)\3
@@ -86,6 +105,15 @@ gpmatprm1 glow_mat,"u_enabled",double(enabled)
 return
 
 *update_effects
+if bloom_level<1 : bloom_level=1
+if bloom_level>10 : bloom_level=10
+bloom_scale=double(bloom_level)/5.0
+; タイトル更新は強度変更時だけ。描画先をメイン画面へ戻す。
+if bloom_level!=shown_bloom_level {
+    gsel 0
+    title "ネトロシェーダー - Bloom "+bloom_level+"/10 [Up/Down] / Space: BG / E: Effect / P: Pulse"
+    shown_bloom_level=bloom_level
+}
 ; 時間基準の減衰。長い停止後は尾も消える。
 getreq now_ms,SYSREQ_TIMER
 delta_ms=now_ms-last_ms : last_ms=now_ms
@@ -101,8 +129,8 @@ if pulse_mode & enabled {
     mint_current=mint_gain*(pulse_min+(pulse_max-pulse_min)*mint_wave)
     orange_current=orange_gain*(pulse_min+(pulse_max-pulse_min)*orange_wave)
 }
-gpmatprm1 glow_mat,"u_mintGain",mint_current
-gpmatprm1 glow_mat,"u_orangeGain",orange_current
+gpmatprm1 glow_mat,"u_mintGain",mint_current*bloom_scale
+gpmatprm1 glow_mat,"u_orangeGain",orange_current*bloom_scale
 return
 
 *draw_scene
