@@ -1,0 +1,147 @@
+; SPDX-License-Identifier: MIT
+; Copyright holder: see LICENSE (UTF-8).
+#include "hsp3dish.as"
+; 通常Dish版：発光画像と位置履歴。画面の色抽出は行わない。
+vw=ginfo_dispx : vh=ginfo_dispy
+if (vw>0)&(vh>0) {
+    vw=vw*4/5 : vh=vh*4/5
+} else {
+    vw=640 : vh=360
+}
+screen 0,vw,vh
+sx=double(vw)/320.0 : sy=double(vh)/180.0
+short_side=vw : if vh<short_side : short_side=vh
+; 発光の直径は画面短辺に比例。
+glow_size=double(short_side)/18.0
+enabled=1 : pulse_mode=1 : bg_mode=0
+bloom_level=5 : shown_level=0
+e_prev=0 : p_prev=0
+pulse_period_ms=2400.0
+trail_half_ms=180.0
+trail_duration_ms=1200
+history_size=128 : history_head=0 : history_count=0
+dim hx,history_size,2 : dim hy,history_size,2
+dim ht,history_size
+dim lamp_x,2 : dim lamp_y,2
+celload "res/cyberpunk_city.png",5
+gsel 5 : bgw=ginfo_sx : bgh=ginfo_sy
+celload "res/dish/glow_mint.png",10
+celload "res/dish/glow_orange.png",11
+celload "res/dish/glow_red.png",12
+celload "res/dish/glow_green.png",13
+getreq start_ms,SYSREQ_TIMER
+last_sample=-100
+
+*main
+stick key
+if key&128 : end
+if key&16 : bg_mode=(bg_mode+1)\3 : history_count=0
+if key&2 : bloom_level++
+if key&8 : bloom_level--
+if bloom_level<1 : bloom_level=1
+if bloom_level>10 : bloom_level=10
+getkey e_now,69
+if (e_now=1)&(e_prev=0) : enabled=1-enabled : history_count=0
+e_prev=e_now
+getkey p_now,80
+if (p_now=1)&(p_prev=0) : pulse_mode=1-pulse_mode
+p_prev=p_now
+getreq now_ms,SYSREQ_TIMER
+time_ms=now_ms-start_ms
+if time_ms<0 : start_ms=now_ms : time_ms=0 : history_count=0 : last_sample=-100
+t=double(time_ms)/16.6667
+mint_rate=1.0 : orange_rate=1.0
+if pulse_mode & enabled {
+    phase=6.28318530718*double(time_ms)/pulse_period_ms
+    mint_rate=0.15+1.2*(0.5+0.5*sin(phase))
+    orange_rate=0.15+1.2*(0.5+0.5*sin(phase+1.57079632679))
+}
+lamp_x(0)=int((160.0+sin(t*0.023)*110.0)*sx)
+lamp_y(0)=int((85.0+cos(t*0.031)*38.0)*sy)
+lamp_x(1)=int((160.0+sin(t*0.019+2.0)*105.0)*sx)
+lamp_y(1)=int((90.0+cos(t*0.027+1.0)*40.0)*sy)
+; 約60Hzで位置を保存。低FPSの欠落位置は捏造せず、そのまま間隔が空く。
+if enabled & (time_ms-last_sample>=16) {
+    repeat 2
+        hx(history_head,cnt)=lamp_x(cnt)
+        hy(history_head,cnt)=lamp_y(cnt)
+    loop
+    ht(history_head)=time_ms
+    history_head=(history_head+1)\history_size
+    if history_count<history_size : history_count++
+    last_sample=time_ms
+}
+gsel 0
+if shown_level!=bloom_level {
+    title "Netro HSP3Dish - Bloom "+bloom_level+"/10 [Up/Down] / Space: BG / E: Effect / P: Pulse"
+    shown_level=bloom_level
+}
+redraw 0
+gmode 0 : color 0,0,0 : boxf
+if bg_mode=1 {
+    color 10,12,24 : boxf
+    color 25,28,44
+    repeat 21
+        xx=int(cnt*16*sx) : line xx,0,xx,vh-1
+    loop
+    repeat 13
+        yy=int(cnt*16*sy) : line 0,yy,vw-1,yy
+    loop
+}
+if bg_mode=2 {
+    pos 0,0 : gmode 0 : gzoom vw,vh,5,0,0,bgw,bgh
+}
+; 履歴は古い位置ほど暗くし、丸い発光画像を加算する。
+if enabled {
+    repeat history_count
+        idx=(history_head-1-cnt+history_size)\history_size
+        age=time_ms-ht(idx)
+        if age<=trail_duration_ms {
+            alpha=int(150.0*expf(-0.69314718*double(age)/trail_half_ms))
+            repeat 2
+                glow_id=12+cnt : gx=hx(idx,cnt) : gy=hy(idx,cnt)
+                diameter=glow_size*0.60
+                gosub *draw_glow
+            loop
+        }
+    loop
+}
+; このサンプルでは発光対象を明示指定。元画像の色は変更しない。
+repeat 28
+    gx=int((24+cnt*10)*sx)
+    gy=int((112.0+sin(double(cnt)*0.5+t*0.04)*18.0)*sy)
+    glow_id=10 : rate=mint_rate
+    if cnt\2 : glow_id=11 : rate=orange_rate
+    if enabled {
+        alpha=int(180.0*double(bloom_level)/5.0*rate)
+        diameter=glow_size
+        gosub *draw_glow
+    }
+    gmode 0
+    color 64,255,192
+    if glow_id=11 : color 255,128,40
+    boxf gx,gy,gx+int(2*sx),gy+int(2*sy)
+loop
+repeat 2
+    gx=lamp_x(cnt) : gy=lamp_y(cnt)
+    gmode 0
+    color 255,22,12
+    if cnt=1 : color 20,255,35
+    boxf gx,gy,gx+int(4*sx),gy+int(2*sy)
+loop
+redraw 1
+await 16
+goto *main
+
+*draw_glow
+; 大きい強度は2回以上の加算で表現し、256超のgmode指定を避ける。
+remaining=alpha
+repeat
+    if remaining<=0 : break
+    part=remaining : if part>256 : part=256
+    gmode 5,,,part
+    pos gx-int(diameter/2.0),gy-int(diameter/2.0)
+    celput glow_id,0,diameter/32.0,diameter/32.0
+    remaining-=part
+loop
+return
