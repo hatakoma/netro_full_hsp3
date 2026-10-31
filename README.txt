@@ -7,14 +7,14 @@
   「全画面」はウィンドウ内の画面全体への効果を意味します。
 
 起動と操作
-  HSP3.7を導入し、main.hspをHSPエディタで開いてF5で実行します。
+  HSP3.7を導入し、OpenGL版はmain.hsp、DirectX版はmain_dx.hspをHSPエディタで開いてF5で実行します。
   resフォルダはmain.hspと同じ場所に置いてください。
   Space : 背景 OFF（黒）→マス目→一枚絵→OFF
   E     : 発光・残像のON/OFF
   P     : 水緑色・オレンジの明滅ON/OFF
   上下  : ブルーム強度を1～10段階で増減（初期値5）
   Esc   : 終了
-  初期状態は効果ON、背景OFF、明滅OFF。長押しで連続切替しません。
+  初期状態は効果ON、背景OFF、明滅ON。長押しで連続切替しません。
   背景・効果を切り替えると、古い残像履歴を消去します。
   Eで効果OFF中は明滅も停止し、Pの設定と位相は保持します。
 
@@ -80,15 +80,15 @@
   res/background_prompt.txt    : 背景の生成プロンプト
   LICENSE_NOTES.txt             : 出典・利用許諾の整理
   THIRD_PARTY_NOTICES.txt       : HGIMG4・ANGLEの通知文
-  シェーダーはASCII、本文書とライセンス文書はCP932です。
+  シェーダーはASCII、本文書と.txtのライセンス文書はCP932、LICENSEはUTF-8です。
   実行ファイルを配布する場合は、res以下の必要な画像・シェーダーと
   必要な著作権・ライセンス通知を同梱してください。
-  独自部分のオープンソースライセンスは未指定です。
+  独自部分はMIT Licenseです。著作権表記と全文はLICENSEを参照してください。
   コンパイル生成物は.gitignoreで除外しています。
 
 検証
   HSP3.7のhspcmp.exeでコンパイル確認済みです。
-  GPU上のシェーダー実行、実画面のキー操作、見た目、FPSは未確認です。
+  DirectX版の実描画結果と未確認事項は末尾の検証記録を参照してください。
 
 公式資料
   https://www.onionsoft.net/hsp/v37/doclib/hgimg4.html
@@ -105,3 +105,23 @@
   強度倍率はbloom_level/5.0（1で0.2倍、5で1倍、10で2倍）。
   Pの明滅倍率とは乗算で合成し、赤・緑の残像強度は変更しません。
   Eで効果OFF中も段階設定は変更でき、ONに戻すと反映されます。
+
+DirectX版（HGIMG4 / ANGLE）
+  main_dx.hspがNETRO_DIRECTXを定義し、共通のmain.hspを読み込みます。
+  共通処理はhgimg4dx.asを選択し、hsp3gpdxランタイムで動作します。
+  OpenGL版と同じGLSLシェーダー・背景画像・キー操作を使用します。
+  main.hspを直接実行すると従来のOpenGL版です。
+  配布時は使用するHSP3.7のDirectXランタイムに必要なDLL等を確認し、
+  LICENSEおよびTHIRD_PARTY_NOTICES.txtのHGIMG4・ANGLE通知を同梱してください。
+  両エントリーポイントのHSPコンパイルを確認済みです。
+  DirectX版の起動・基本描画は実機確認済み。OpenGL版の実描画は未確認です。
+
+DirectX版 実機検証記録（2026-10-31）
+  C:/hsp37/hsp3gpdx.exeでnetro_dx.axを起動。
+  ログにHGIMG4 3.7 initalized : win32dx9を確認。
+  黒背景上の水緑色・オレンジのブルーム、赤・緑の移動する残像、
+  紫・灰色の色見本、左上の目印を実画面で確認しました。
+  起動中のログにシェーダーエラーは見つかりませんでした。
+  自動送信したSpace/E/上キーではモード変更を確認できませんでした。
+  入力送信側かアプリ側かは未切り分けです。キー操作、背景画像への切替、
+  明滅、強度1～10の操作、FPS測定は検証未完了です。

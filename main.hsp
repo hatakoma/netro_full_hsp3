@@ -1,4 +1,10 @@
+; SPDX-License-Identifier: MIT
+; Copyright holder: see LICENSE (UTF-8).
+#ifdef NETRO_DIRECTX
+#include "hgimg4dx.as"
+#else
 #include "hgimg4.as"
+#endif
 
 ; ネトロシェーダー：水緑色／オレンジの色選択グロー
 ; このファイルは Shift-JIS (CP932) で保存する。
@@ -29,7 +35,7 @@ enabled=1
 background_mode=0
 e_prev=0
 p_prev=0
-pulse_mode=0          ; Pキーで明滅ON/OFF（初期状態OFF）
+pulse_mode=1          ; Pキーで明滅ON/OFF（初期状態ON）
 pulse_period_ms=2400.0 ; 明滅の周期（ミリ秒、0より大きくする）
 pulse_min=0.15        ; 基準発光強度に対する最小倍率
 pulse_max=1.35        ; 基準発光強度に対する最大倍率
